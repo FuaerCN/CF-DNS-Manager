@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Globe, Server, User, Shield, Key, LogOut, Plus, Trash2, Edit2, ExternalLink, RefreshCw, Zap, Languages, CheckCircle, AlertCircle, X, Search, ChevronDown, Upload, Download, Copy } from 'lucide-react';
+import { Globe, Server, User, Shield, Key, LogOut, Plus, Trash2, Edit2, ExternalLink, RefreshCw, Zap, Languages, CheckCircle, AlertCircle, X, Search, ChevronDown, Upload, Download, Copy, Github } from 'lucide-react';
 
 // Translations
 const translations = {
@@ -151,6 +151,8 @@ const translations = {
         invalidToken: '无效的 API 令牌',
         tokenRequired: '请输入 API 令牌',
         verifyFailed: '令牌校验失败',
+        githubLogin: '使用 GitHub 登录',
+        or: '或',
     },
     en: {
         title: 'DNS Manager',
@@ -300,6 +302,8 @@ const translations = {
         invalidToken: 'Invalid API Token',
         tokenRequired: 'API Token is required',
         verifyFailed: 'Token verification failed',
+        githubLogin: 'Login with GitHub',
+        or: 'Or',
     }
 };
 
@@ -433,6 +437,24 @@ const Login = ({ onLogin, t, lang, onLangChange }) => {
     const [error, setError] = useState('');
 
     const [remember, setRemember] = useState(false);
+    const [config, setConfig] = useState({ passwordMode: true, githubMode: false });
+
+    useEffect(() => {
+        fetch('/api/auth/config', {
+            headers: { 'Cache-Control': 'no-cache' }
+        })
+            .then(res => {
+                if (res.ok) return res.json();
+                throw new Error('Config failed');
+            })
+            .then(data => {
+                console.log('Auth Config:', data);
+                if (data && typeof data.passwordMode === 'boolean') {
+                    setConfig(data);
+                }
+            })
+            .catch(err => console.error('Config fetch error:', err));
+    }, []);
 
     // 辅助函数：生成 SHA-256 哈希
     const hashPassword = async (pwd) => {
@@ -552,15 +574,16 @@ const Login = ({ onLogin, t, lang, onLangChange }) => {
                                 <Key size={16} style={{ position: 'absolute', left: '12px', top: '12px', color: 'var(--text-muted)' }} />
                                 <input
                                     type="password"
-                                    placeholder={t('passwordPlaceholder')}
+                                    placeholder={config.passwordMode ? t('passwordPlaceholder') : '密码登录已禁用'}
                                     value={password}
                                     onChange={(e) => setPassword(e.target.value)}
-                                    style={{ paddingLeft: '38px' }}
-                                    required
+                                    style={{ paddingLeft: '38px', backgroundColor: config.passwordMode ? '' : '#f5f5f5', cursor: config.passwordMode ? '' : 'not-allowed' }}
+                                    required={config.passwordMode}
+                                    disabled={!config.passwordMode}
                                 />
                             </div>
                             <p style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: 'var(--text-muted)' }}>
-                                {t('serverHint')}
+                                {config.passwordMode ? t('serverHint') : '此服务器仅支持 GitHub 授权登录'}
                             </p>
                         </div>
                     ) : (
@@ -598,9 +621,33 @@ const Login = ({ onLogin, t, lang, onLangChange }) => {
                         </label>
                     </div>
 
-                    <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
-                        {loading ? <RefreshCw className="spin" size={18} /> : t('loginBtn')}
-                    </button>
+                    {(!isServerMode || config.passwordMode) && (
+                        <button className="btn btn-primary" style={{ width: '100%', justifyContent: 'center' }} disabled={loading}>
+                            {loading ? <RefreshCw className="spin" size={18} /> : t('loginBtn')}
+                        </button>
+                    )}
+
+                    {isServerMode && config.githubMode && (
+                        <>
+                            {config.passwordMode && (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '1.5rem 0' }}>
+                                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{t('or')}</span>
+                                    <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+                                </div>
+                            )}
+
+                            <button
+                                type="button"
+                                className="btn btn-outline"
+                                style={{ width: '100%', justifyContent: 'center', gap: '8px', border: '1px solid #e2e8f0' }}
+                                onClick={() => window.location.href = '/api/auth/github'}
+                            >
+                                <Github size={18} />
+                                {t('githubLogin')}
+                            </button>
+                        </>
+                    )}
                 </form>
             </div>
         </div>
@@ -2065,6 +2112,26 @@ const App = () => {
 
 
     useEffect(() => {
+        // Handle OAuth callback token from URL
+        const hash = window.location.hash;
+        if (hash.startsWith('#auth_token=')) {
+            const params = new URLSearchParams(hash.substring(1));
+            const token = params.get('auth_token');
+            const mode = params.get('mode') || 'server';
+            if (token) {
+                // Clear hash to prevent re-login on refresh
+                window.history.replaceState(null, '', window.location.pathname);
+
+                const credentials = {
+                    mode,
+                    token,
+                    remember: true, // Default to true for OAuth
+                    accounts: [] // Will be populated by fetchZones if backend supports auto-discovery
+                };
+                handleLogin(credentials);
+            }
+        }
+
         const saved = localStorage.getItem('auth_session') || sessionStorage.getItem('auth_session');
         if (saved) {
             try {
@@ -2078,15 +2145,31 @@ const App = () => {
         }
     }, []);
 
-    const handleLogin = (credentials) => {
-        setAuth(credentials);
-        if (credentials.remember) {
-            localStorage.setItem('auth_session', JSON.stringify(credentials));
-        } else {
-            // Always use sessionStorage to at least survive refresh within the session
-            sessionStorage.setItem('auth_session', JSON.stringify(credentials));
+    const handleLogin = async (credentials) => {
+        let finalCredentials = { ...credentials };
+
+        // If accounts list is empty, try to fetch it from the server
+        if (finalCredentials.mode === 'server' && (!finalCredentials.accounts || finalCredentials.accounts.length === 0)) {
+            try {
+                const res = await fetch('/api/accounts', {
+                    headers: getAuthHeaders(finalCredentials)
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    finalCredentials.accounts = data.accounts || [];
+                }
+            } catch (e) {
+                console.error("Failed to fetch accounts:", e);
+            }
         }
-        fetchZones(credentials);
+
+        setAuth(finalCredentials);
+        if (finalCredentials.remember) {
+            localStorage.setItem('auth_session', JSON.stringify(finalCredentials));
+        } else {
+            sessionStorage.setItem('auth_session', JSON.stringify(finalCredentials));
+        }
+        fetchZones(finalCredentials);
     };
 
     const handleLogout = () => {

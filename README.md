@@ -35,12 +35,22 @@
 ### 3. 配置环境变量 (可选 - 开启托管模式)
 若要开启托管模式，请在 Pages 设置中添加以下环境变量：
 
-| 变量名          | 必填 | 描述                                               |
-| :-------------- | :--- | :------------------------------------------------- |
-| `APP_PASSWORD`  | 是   | 管理面板登录密码 (请使用复杂密码)                  |
-| `CF_API_TOKEN`  | 是   | Cloudflare API 令牌 (需 DNS:Edit 和 SSL:Edit 权限) |
-| `CF_API_TOKEN1` | 否   | 备用账户 1 的 API 令牌                             |
-| `CF_API_TOKEN2` | 否   | 备用账户 2 的 API 令牌                             |
+| 变量名                 | 必填 | 描述                                               |
+| :--------------------- | :--- | :------------------------------------------------- |
+| `APP_PASSWORD`         | 是   | 管理面板登录密码 (请使用复杂密码)                  |
+| `CF_API_TOKEN`         | 是   | Cloudflare API 令牌 (需 DNS:Edit 和 SSL:Edit 权限) |
+| `CF_API_TOKEN1`        | 否   | 备用账户 1 的 API 令牌                             |
+| `CF_API_TOKEN2`        | 否   | 备用账户 2 的 API 令牌                             |
+| `GITHUB_CLIENT_ID`     | 否   | GitHub OAuth App 的 Client ID                      |
+| `GITHUB_CLIENT_SECRET` | 否   | GitHub OAuth App 的 Client Secret                  |
+| `ALLOWED_GITHUB_USER`  | 否   | 仅允许该 GitHub 用户名登录 (必须设置以保证安全)    |
+
+### 4. 配置 GitHub OAuth (可选)
+1. 在 [GitHub Developer Settings](https://github.com/settings/developers) 创建一个新的 OAuth App。
+2. **Homepage URL**：填写你的 Pages 域名。
+3. **Authorization callback URL**：填写 `https://你的域名/api/auth/github/callback`。
+4. 获取 Client ID 和 Secret 并填入 Pages 环境变量。
+5. **务必设置** `ALLOWED_GITHUB_USER`，否则任何 GitHub 用户都能登录你的面板。
 
 ---
 

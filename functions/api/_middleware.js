@@ -2,8 +2,8 @@ export async function onRequest(context) {
     const { request, env, next } = context;
     const url = new URL(request.url);
 
-    // Skip auth for login API
-    if (url.pathname === '/api/login') {
+    // Skip auth for login, oauth and config API
+    if (url.pathname === '/api/login' || url.pathname.startsWith('/api/auth/github') || url.pathname === '/api/auth/config') {
         return next();
     }
 
@@ -20,10 +20,11 @@ export async function onRequest(context) {
     // Priority 2: Server Mode (JWT provided, using server's CF_API_TOKEN)
     if (authHeader && authHeader.startsWith('Bearer ')) {
         const token = authHeader.substring(7);
-        const serverSecret = env.APP_PASSWORD;
+        // Fallback to GITHUB_CLIENT_SECRET if APP_PASSWORD is not set
+        const serverSecret = env.APP_PASSWORD || env.GITHUB_CLIENT_SECRET;
 
         if (!serverSecret) {
-            return new Response(JSON.stringify({ error: 'Server-side Managed Mode is not configured (missing APP_PASSWORD).' }), {
+            return new Response(JSON.stringify({ error: 'Server-side Managed Mode is not configured.' }), {
                 status: 403,
                 headers: { 'Content-Type': 'application/json' }
             });
