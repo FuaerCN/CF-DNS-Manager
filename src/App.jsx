@@ -2132,6 +2132,9 @@ const App = () => {
                 } else {
                     setSelectedZone(null);
                 }
+            } else {
+                const errorMsg = data.errors?.[0]?.message || data.message || data.error || t('errorOccurred');
+                showToast(errorMsg, 'error');
             }
         } catch (err) {
             showToast(t('errorOccurred'), 'error');
@@ -2209,6 +2212,36 @@ const App = () => {
         localStorage.removeItem('auth_session');
         sessionStorage.removeItem('auth_session');
     };
+
+    // Global fetch interceptor to handle 401 Unauthorized (JWT expiration) globally
+    useEffect(() => {
+        if (!window.__originalFetch) {
+            window.__originalFetch = window.fetch;
+            window.fetch = async (...args) => {
+                const res = await window.__originalFetch(...args);
+                const url = args[0] ? args[0].toString() : '';
+                // Only intercept API calls that require authentication
+                if (
+                    res.status === 401 && 
+                    url.startsWith('/api/') && 
+                    !url.includes('/api/login') && 
+                    !url.includes('/api/auth/config') && 
+                    !url.includes('/api/verify-token') &&
+                    !url.includes('/api/auth/github')
+                ) {
+                    window.dispatchEvent(new Event('auth-expired'));
+                }
+                return res;
+            };
+        }
+
+        const handleAuthExpired = () => {
+            handleLogout();
+        };
+
+        window.addEventListener('auth-expired', handleAuthExpired);
+        return () => window.removeEventListener('auth-expired', handleAuthExpired);
+    }, [t]);
 
     if (!auth) {
         return <Login onLogin={handleLogin} t={t} lang={lang} onLangChange={changeLang} />;
