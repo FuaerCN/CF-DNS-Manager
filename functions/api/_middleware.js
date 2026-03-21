@@ -49,7 +49,7 @@ export async function onRequest(context) {
                 });
             }
 
-            context.data.cfToken = serverToken;
+            context.data.cfToken = serverToken.trim().replace(/^["']|["']$/g, '');
             return next();
         } catch (e) {
             return new Response(JSON.stringify({ error: 'Invalid or expired session.', message: e.message }), {
