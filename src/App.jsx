@@ -753,8 +753,13 @@ const ZoneDetail = ({ zone, zones, onSwitchZone, onRefreshZones, zonesLoading, a
         setLoading(true);
         try {
             const res = await fetch(`/api/zones/${zone.id}/dns_records`, { headers: getHeaders() });
+            if (res.status === 401) { setLoading(false); return; }
             const data = await res.json();
-            setRecords((data.result || []).sort((a, b) => new Date(b.modified_on) - new Date(a.modified_on)));
+            if (res.ok) {
+                setRecords((data.result || []).sort((a, b) => new Date(b.modified_on) - new Date(a.modified_on)));
+            } else {
+                showToast(data.errors?.[0]?.message || t('errorOccurred'), 'error');
+            }
         } catch (e) {
             showToast(t('errorOccurred'), 'error');
         }
@@ -851,21 +856,25 @@ const ZoneDetail = ({ zone, zones, onSwitchZone, onRefreshZones, zonesLoading, a
             }
         }
 
-        const res = await fetch(url, {
-            method,
-            headers: getHeaders(true),
-            body: JSON.stringify(payload)
-        });
+        try {
+            const res = await fetch(url, {
+                method,
+                headers: getHeaders(true),
+                body: JSON.stringify(payload)
+            });
 
-        if (res.ok) {
-            setShowDNSModal(false);
-            setEditingRecord(null);
-            fetchDNS();
-            showToast(editingRecord ? t('updateSuccess') : t('addSuccess'));
-        } else {
-            const data = await res.json().catch(() => ({}));
-            const isFallbackError = data.errors?.some(e => e.code === 1040);
-            showToast(isFallbackError ? t('fallbackError') : (data.errors?.[0]?.message || data.message || t('errorOccurred')), 'error');
+            if (res.ok) {
+                setShowDNSModal(false);
+                setEditingRecord(null);
+                fetchDNS();
+                showToast(editingRecord ? t('updateSuccess') : t('addSuccess'));
+            } else {
+                const data = await res.json().catch(() => ({}));
+                const isFallbackError = data.errors?.some(e => e.code === 1040);
+                showToast(isFallbackError ? t('fallbackError') : (data.errors?.[0]?.message || data.message || t('errorOccurred')), 'error');
+            }
+        } catch (err) {
+            showToast(t('errorOccurred'), 'error');
         }
     };
 
@@ -1116,7 +1125,7 @@ const ZoneDetail = ({ zone, zones, onSwitchZone, onRefreshZones, zonesLoading, a
 
     const filteredRecords = records.filter(r =>
         r.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        r.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (r.content || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
         r.type.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
@@ -2074,6 +2083,7 @@ const App = () => {
     const [loading, setLoading] = useState(false);
     const [toast, setToast] = useState(null);
     const toastTimer = useRef(null);
+    const logoutRef = useRef(null);
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -2132,7 +2142,8 @@ const App = () => {
                 } else {
                     setSelectedZone(null);
                 }
-            } else {
+            } else if (res.status !== 401) {
+                // Don't show error toast for 401, the global interceptor handles logout
                 const errorMsg = data.errors?.[0]?.message || data.message || data.error || t('errorOccurred');
                 showToast(errorMsg, 'error');
             }
@@ -2213,6 +2224,9 @@ const App = () => {
         sessionStorage.removeItem('auth_session');
     };
 
+    // Keep logoutRef always pointing to the latest handleLogout
+    logoutRef.current = handleLogout;
+
     // Global fetch interceptor to handle 401 Unauthorized (JWT expiration) globally
     useEffect(() => {
         if (!window.__originalFetch) {
@@ -2236,12 +2250,13 @@ const App = () => {
         }
 
         const handleAuthExpired = () => {
-            handleLogout();
+            // Use ref to always call the latest handleLogout, avoiding stale closure
+            if (logoutRef.current) logoutRef.current();
         };
 
         window.addEventListener('auth-expired', handleAuthExpired);
         return () => window.removeEventListener('auth-expired', handleAuthExpired);
-    }, [t]);
+    }, []);
 
     if (!auth) {
         return <Login onLogin={handleLogin} t={t} lang={lang} onLangChange={changeLang} />;
