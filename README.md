@@ -38,7 +38,7 @@
 
 ### 2. 在 Cloudflare Pages 部署
 
-1. 进入 **Workers 和 Pages** 控制台 → **创建应用** → **Pages** → **连接到 Git**
+1. 进入 **Workers 和 Pages** 控制台 → **创建应用** → **`Pages 应用`** → **连接到 Git**
 2. 选择你的 Fork 仓库
 3. 构建设置：
    - 框架预设：`Vite`
